@@ -9,7 +9,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { useFinance } from '../contexts/FinanceContext';
 import { supabase } from '../lib/supabase';
-import { Plus, Trash2, Eye, Edit, FileText, CheckCircle, XCircle } from 'lucide-react';
+import { Plus, Trash2, Eye, CreditCard as Edit, FileText, CheckCircle, XCircle } from 'lucide-react';
 import { showToast } from '../components/ToastNotification';
 import { showConfirm } from '../components/ConfirmDialog';
 import { formatDate } from '../utils/dateFormat';
@@ -648,22 +648,36 @@ export function DeliveryChallan() {
 
         if (updateError) throw updateError;
 
-        // For approved DCs, only header fields are editable (items locked after approval to preserve stock integrity)
-        if (editingChallan.approval_status !== 'approved') {
-          const itemsForRpc = items.map(item => ({
-            product_id: item.product_id,
-            batch_id: item.batch_id,
-            quantity: item.quantity,
-            pack_size: item.pack_size,
-            pack_type: item.pack_type,
-            number_of_packs: item.number_of_packs,
-          }));
+        // For approved DCs, only admin can edit items (uses admin override RPC)
+        const itemsForRpc = items.map(item => ({
+          product_id: item.product_id,
+          batch_id: item.batch_id,
+          quantity: item.quantity,
+          pack_size: item.pack_size,
+          pack_type: item.pack_type,
+          number_of_packs: item.number_of_packs,
+        }));
 
+        if (editingChallan.approval_status === 'approved') {
+          if (profile?.role === 'admin') {
+            const { data: rpcResult, error: rpcError } = await supabase.rpc('admin_edit_approved_delivery_challan', {
+              p_challan_id: editingChallan.id,
+              p_new_items: itemsForRpc
+            });
+            if (rpcError) {
+              console.error('Admin Edit RPC Error:', rpcError);
+              throw new Error(`Failed to update approved DC: ${rpcError.message}`);
+            }
+            if (!rpcResult?.success) {
+              console.error('Admin Edit RPC Result Error:', rpcResult?.error);
+              throw new Error(rpcResult?.error || 'Failed to update approved DC items');
+            }
+          }
+        } else {
           const { data: rpcResult, error: rpcError } = await supabase.rpc('edit_delivery_challan', {
             p_challan_id: editingChallan.id,
             p_new_items: itemsForRpc
           });
-
           if (rpcError) {
             console.error('RPC Error:', rpcError);
             throw new Error(`Failed to update DC: ${rpcError.message}`);
@@ -1232,7 +1246,7 @@ export function DeliveryChallan() {
             <div className="border-t pt-3 mt-3">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-sm font-semibold text-gray-700">Items to Dispatch</h3>
-                {editingChallan?.approval_status !== 'approved' && (
+                {(editingChallan?.approval_status !== 'approved' || profile?.role === 'admin') && (
                   <button
                     type="button"
                     onClick={addItem}
@@ -1243,10 +1257,17 @@ export function DeliveryChallan() {
                 )}
               </div>
 
-              {editingChallan?.approval_status === 'approved' && (
+              {editingChallan?.approval_status === 'approved' && profile?.role !== 'admin' && (
                 <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 flex items-center gap-2">
-                  <span className="text-amber-500">⚠</span>
+                  <span className="text-amber-500">!</span>
                   Items are locked after approval to preserve stock accuracy. You can still edit vehicle, driver, address, and notes above.
+                </div>
+              )}
+
+              {editingChallan?.approval_status === 'approved' && profile?.role === 'admin' && (
+                <div className="mb-3 px-3 py-2 bg-orange-50 border border-orange-200 rounded-lg text-xs text-orange-800 flex items-center gap-2">
+                  <span className="text-orange-500">!</span>
+                  Admin override: editing items on an approved DC will reverse and reapply stock movements automatically.
                 </div>
               )}
 
