@@ -9,10 +9,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { useFinance } from '../contexts/FinanceContext';
 import { supabase } from '../lib/supabase';
-import { Plus, Trash2, Eye, CreditCard as Edit, FileText, CheckCircle, XCircle } from 'lucide-react';
+import { Plus, Trash2, Eye, CreditCard as Edit, FileText, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
 import { showToast } from '../components/ToastNotification';
 import { showConfirm } from '../components/ConfirmDialog';
 import { formatDate } from '../utils/dateFormat';
+import { UnlinkedDCReview } from '../components/UnlinkedDCReview';
 
 interface DeliveryChallan {
   id: string;
@@ -117,6 +118,8 @@ export function DeliveryChallan() {
     driver_name: '',
     notes: '',
   });
+  const [activeTab, setActiveTab] = useState<'challans' | 'unlinked'>('challans');
+  const [unlinkedCount, setUnlinkedCount] = useState(0);
   const [salesOrders, setSalesOrders] = useState<any[]>([]);
   const approvalOperationIdsRef = useRef<Record<string, string>>({});
   const [soReservations, setSoReservations] = useState<Map<string, number>>(new Map());
@@ -135,7 +138,20 @@ export function DeliveryChallan() {
     loadProducts();
     loadBatches();
     loadCompanySettings();
+    loadUnlinkedCount();
   }, [dateRange.startDate, dateRange.endDate]);
+
+  const loadUnlinkedCount = async () => {
+    try {
+      const { count } = await supabase
+        .from('delivery_challans')
+        .select('id', { count: 'exact', head: true })
+        .or('sales_order_id.is.null,review_status.eq.needs_review');
+      setUnlinkedCount(count || 0);
+    } catch {
+      // ignore
+    }
+  };
 
   const loadSalesOrders = async (customerId?: string) => {
     try {
@@ -1069,7 +1085,43 @@ export function DeliveryChallan() {
           )}
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="flex items-center gap-1 border-b border-gray-200">
+          <button
+            type="button"
+            onClick={() => setActiveTab('challans')}
+            className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'challans'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            All Delivery Challans
+            <span className="ml-2 px-1.5 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full">{stats.total}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('unlinked')}
+            className={`flex items-center gap-1.5 px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'unlinked'
+                ? 'border-amber-500 text-amber-600'
+                : 'border-transparent text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            <AlertTriangle className="w-4 h-4" />
+            Unlinked DC (Needs Review)
+            {unlinkedCount > 0 && (
+              <span className="px-1.5 py-0.5 text-xs bg-amber-100 text-amber-700 rounded-full font-semibold">{unlinkedCount}</span>
+            )}
+          </button>
+        </div>
+
+        {activeTab === 'unlinked' ? (
+          <div className="bg-white rounded-lg shadow p-6">
+            <UnlinkedDCReview onLinked={() => { loadUnlinkedCount(); loadChallans(); }} />
+          </div>
+        ) : (
+        <>
+        <div className="bg-white rounded-lg shadow p-4">
           <p className="text-sm text-gray-600">Total Delivery Challans</p>
           <p className="text-2xl font-bold text-gray-900 mt-1">{stats.total}</p>
         </div>
@@ -1531,6 +1583,8 @@ export function DeliveryChallan() {
               </div>
             </div>
           </Modal>
+        )}
+        </>
         )}
       </div>
     </Layout>

@@ -251,6 +251,48 @@ export default function SalesOrders() {
     );
   };
 
+  const getOrderStatusBadge = (order: SalesOrder) => {
+    // Cancelled always wins
+    if (order.status === 'cancelled') {
+      return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">Cancelled</span>;
+    }
+
+    const s = soStatuses.get(order.id);
+
+    if (s) {
+      const hasDC = s.approved_dc_count > 0;
+      const hasInvoice = s.invoice_count > 0;
+      const deliveryDone = s.delivery_status === 'completed';
+      const invoiceDone = s.invoice_status === 'completed';
+
+      if (deliveryDone && invoiceDone) {
+        return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">Completed</span>;
+      }
+      if (hasInvoice && !hasDC) {
+        return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">Invoiced</span>;
+      }
+      if (deliveryDone && !invoiceDone) {
+        return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-orange-100 text-orange-800">Delivered</span>;
+      }
+      if (hasDC || hasInvoice) {
+        return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-700">Processing</span>;
+      }
+    }
+
+    // No DC, no Invoice — fall back to internal SO status
+    if (['delivered', 'partially_delivered'].includes(order.status)) {
+      return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-orange-100 text-orange-800">Delivered</span>;
+    }
+    if (['stock_reserved', 'pending_delivery', 'approved', 'shortage'].includes(order.status)) {
+      return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-700">Processing</span>;
+    }
+    if (['pending_approval', 'draft'].includes(order.status)) {
+      return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700">Pending</span>;
+    }
+
+    return <span className="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700">Pending</span>;
+  };
+
   const getDeliveryStatusBadge = (soId: string) => {
     const s = soStatuses.get(soId);
     if (!s) return <span className="text-gray-400 text-xs">—</span>;
@@ -656,22 +698,20 @@ export default function SalesOrders() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Delivery Date</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Docs</th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status / Approval</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Delivery</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Invoice</th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Order Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={11} className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan={9} className="px-6 py-4 text-center text-gray-500">
                     Loading...
                   </td>
                 </tr>
               ) : filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan={9} className="px-6 py-4 text-center text-gray-500">
                     No sales orders found
                   </td>
                 </tr>
@@ -714,19 +754,19 @@ export default function SalesOrders() {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center justify-center gap-2">
-                        {getStatusBadge(order.status)}
+                      <div className="flex flex-col items-center gap-1">
+                        {getOrderStatusBadge(order)}
                         {order.status === 'pending_approval' && profile?.role === 'admin' && (
-                          <div className="flex items-center gap-1 ml-2">
+                          <div className="flex items-center gap-1 mt-1">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleApproveOrder(order.id);
                               }}
-                              className="p-2 bg-green-100 hover:bg-green-200 rounded-lg transition-colors"
+                              className="p-1.5 bg-green-100 hover:bg-green-200 rounded-lg transition-colors"
                               title="Approve Order"
                             >
-                              <CheckCircle className="w-6 h-6 text-green-600" />
+                              <CheckCircle className="w-4 h-4 text-green-600" />
                             </button>
                             <button
                               onClick={(e) => {
@@ -734,26 +774,14 @@ export default function SalesOrders() {
                                 setOrderToReject(order.id);
                                 setShowRejectModal(true);
                               }}
-                              className="p-2 bg-red-100 hover:bg-red-200 rounded-lg transition-colors"
+                              className="p-1.5 bg-red-100 hover:bg-red-200 rounded-lg transition-colors"
                               title="Reject Order"
                             >
-                              <XCircle className="w-6 h-6 text-red-600" />
+                              <XCircle className="w-4 h-4 text-red-600" />
                             </button>
                           </div>
                         )}
-                        {order.status === 'approved' && (
-                          <CheckCircle className="w-5 h-5 text-green-600 ml-2" title="Approved" />
-                        )}
-                        {order.status === 'rejected' && (
-                          <XCircle className="w-5 h-5 text-red-600 ml-2" title="Rejected" />
-                        )}
                       </div>
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-center">
-                      {getDeliveryStatusBadge(order.id)}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-center">
-                      {getInvoiceStatusBadge(order.id)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <div className="flex items-center gap-2">
