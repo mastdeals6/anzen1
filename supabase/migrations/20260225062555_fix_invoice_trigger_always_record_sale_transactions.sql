@@ -38,29 +38,37 @@ BEGIN
 
     IF NOT v_is_from_dc THEN
       -- Manual item: deduct stock
-      SELECT current_stock INTO v_current_stock FROM batches WHERE id = NEW.batch_id;
-      UPDATE batches SET current_stock = current_stock - NEW.quantity WHERE id = NEW.batch_id;
+      SELECT pim.new_stock + NEW.quantity
+      INTO v_current_stock
+      FROM post_inventory_movement(
+        NEW.product_id,
+        NEW.batch_id,
+        -NEW.quantity,
+        'sale',
+        'sales_invoice_item',
+        NEW.id,
+        v_user_id
+      ) AS pim;
     ELSE
       -- DC item: stock already deducted at DC approval; just read current value for audit
       SELECT current_stock INTO v_current_stock FROM batches WHERE id = NEW.batch_id;
     END IF;
 
-    -- ALWAYS log the sale transaction (whether DC or manual)
-    INSERT INTO inventory_transactions (
-      product_id, batch_id, transaction_type, quantity,
-      transaction_date, reference_number, reference_type, reference_id,
-      notes, created_by, stock_before, stock_after
-    ) VALUES (
-      NEW.product_id, NEW.batch_id, 'sale', -NEW.quantity,
-      v_invoice_date, v_invoice_number, 'sales_invoice_item', NEW.id,
-      CASE WHEN v_is_from_dc 
-        THEN 'Sale via DC-linked invoice: ' || v_invoice_number
-        ELSE 'Manual sale via invoice: ' || v_invoice_number
-      END,
-      v_user_id,
-      v_current_stock,
-      v_current_stock -- stock_after same as before because DC already deducted it
-    );
+    -- For DC items, record sale transaction without touching stock
+    IF v_is_from_dc THEN
+      INSERT INTO inventory_transactions (
+        product_id, batch_id, transaction_type, quantity,
+        transaction_date, reference_number, reference_type, reference_id,
+        notes, created_by, stock_before, stock_after
+      ) VALUES (
+        NEW.product_id, NEW.batch_id, 'sale', -NEW.quantity,
+        v_invoice_date, v_invoice_number, 'sales_invoice_item', NEW.id,
+        'Sale via DC-linked invoice: ' || v_invoice_number,
+        v_user_id,
+        v_current_stock,
+        v_current_stock
+      );
+    END IF;
 
     RETURN NEW;
 
@@ -72,19 +80,14 @@ BEGIN
 
     IF NOT v_is_from_dc THEN
       -- Manual item: restore stock
-      SELECT current_stock INTO v_current_stock FROM batches WHERE id = OLD.batch_id;
-      UPDATE batches SET current_stock = current_stock + OLD.quantity WHERE id = OLD.batch_id;
-
-      INSERT INTO inventory_transactions (
-        product_id, batch_id, transaction_type, quantity,
-        transaction_date, reference_number, reference_type, reference_id,
-        notes, created_by, stock_before, stock_after
-      ) VALUES (
-        OLD.product_id, OLD.batch_id, 'adjustment', OLD.quantity,
-        CURRENT_DATE, v_invoice_number, 'invoice_item_delete', OLD.id,
-        'Restored stock from deleted manual invoice item',
-        COALESCE(auth.uid(), OLD.id),
-        v_current_stock, v_current_stock + OLD.quantity
+      PERFORM post_inventory_movement(
+        OLD.product_id,
+        OLD.batch_id,
+        OLD.quantity,
+        'adjustment',
+        'invoice_item_delete',
+        OLD.id,
+        COALESCE(auth.uid(), OLD.id)
       );
     ELSE
       -- DC item deletion: log the removal of the sale record (stock restoration handled by DC)

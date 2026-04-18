@@ -217,10 +217,16 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 BEGIN
-  -- Deduct actual stock from batch
-  UPDATE batches
-  SET current_stock = current_stock - p_quantity
-  WHERE id = p_batch_id;
+  -- Deduct actual stock from batch via unified inventory movement function
+  PERFORM post_inventory_movement(
+    p_product_id,
+    p_batch_id,
+    -p_quantity,
+    'delivery_challan',
+    'delivery_challan',
+    p_so_id,
+    p_user_id
+  );
   
   -- Release reservation for this quantity
   PERFORM fn_release_partial_reservation(p_so_id, p_product_id, p_quantity, p_user_id);
@@ -247,9 +253,15 @@ BEGIN
       WHERE challan_id = OLD.id
     LOOP
       -- Restore batch stock
-      UPDATE batches
-      SET current_stock = current_stock + v_item.quantity
-      WHERE id = v_item.batch_id;
+      PERFORM post_inventory_movement(
+        v_item.product_id,
+        v_item.batch_id,
+        v_item.quantity,
+        'adjustment',
+        'delivery_challan_delete_restore',
+        OLD.id,
+        OLD.created_by
+      );
       
       -- Recreate reservation
       INSERT INTO stock_reservations (

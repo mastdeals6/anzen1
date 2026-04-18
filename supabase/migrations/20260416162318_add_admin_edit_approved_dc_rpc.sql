@@ -64,14 +64,20 @@ BEGIN
 
   -- Reverse old inventory transactions (add back the deducted stock)
   FOR v_old IN
-    SELECT id, batch_id, quantity
+    SELECT id, batch_id, product_id, quantity
     FROM inventory_transactions
     WHERE reference_type = 'delivery_challan'
       AND reference_id = p_challan_id
   LOOP
-    UPDATE batches
-    SET current_stock = current_stock + ABS(v_old.quantity)
-    WHERE id = v_old.batch_id;
+    PERFORM post_inventory_movement(
+      v_old.product_id,
+      v_old.batch_id,
+      ABS(v_old.quantity),
+      'adjustment',
+      'delivery_challan_admin_edit_reverse',
+      v_old.id,
+      auth.uid()
+    );
     DELETE FROM inventory_transactions WHERE id = v_old.id;
   END LOOP;
 
@@ -107,16 +113,14 @@ BEGIN
       v_pack_size, v_pack_type, v_packs
     );
 
-    UPDATE batches
-    SET current_stock = current_stock - v_qty
-    WHERE id = v_batch_id;
-
-    INSERT INTO inventory_transactions (
-      batch_id, product_id, transaction_type, quantity,
-      reference_type, reference_id, transaction_date, created_by
-    ) VALUES (
-      v_batch_id, v_product_id, 'delivery_challan', -v_qty,
-      'delivery_challan', p_challan_id, v_challan.challan_date, auth.uid()
+    PERFORM post_inventory_movement(
+      v_product_id,
+      v_batch_id,
+      -v_qty,
+      'delivery_challan',
+      'delivery_challan',
+      p_challan_id,
+      auth.uid()
     );
   END LOOP;
 
