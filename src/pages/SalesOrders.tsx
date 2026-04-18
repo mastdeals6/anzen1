@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useFinance } from '../contexts/FinanceContext';
 import { Layout } from '../components/Layout';
-import { FileText, Plus, Search, Filter, Eye, Edit, Trash2, XCircle, FileCheck, CheckCircle, Paperclip, Download, ExternalLink } from 'lucide-react';
+import { FileText, Plus, Search, Filter, Eye, CreditCard as Edit, Trash2, XCircle, FileCheck, CheckCircle, Paperclip, Download, ExternalLink } from 'lucide-react';
 import { Modal } from '../components/Modal';
 import SalesOrderForm from '../components/SalesOrderForm';
 import { ProformaInvoiceView } from '../components/ProformaInvoiceView';
@@ -37,6 +37,15 @@ interface SalesOrderItem {
   notes?: string;
   delivered_quantity: number;
   products?: Product;
+}
+
+interface SODeliveryInvoiceStatus {
+  so_id: string;
+  delivery_status: 'pending' | 'partial' | 'completed';
+  invoice_status: 'pending' | 'partial' | 'completed';
+  special_status: string | null;
+  approved_dc_count: number;
+  invoice_count: number;
 }
 
 interface SalesOrder {
@@ -90,6 +99,7 @@ export default function SalesOrders() {
   const [orderToArchive, setOrderToArchive] = useState<string | null>(null);
   const [showProformaModal, setShowProformaModal] = useState(false);
   const [proformaOrder, setProformaOrder] = useState<SalesOrder | null>(null);
+  const [soStatuses, setSoStatuses] = useState<Map<string, SODeliveryInvoiceStatus>>(new Map());
 
   useEffect(() => {
     fetchSalesOrders();
@@ -99,6 +109,22 @@ export default function SalesOrders() {
   useEffect(() => {
     filterOrders();
   }, [searchTerm, statusFilter, salesOrders, activeTab]);
+
+  const fetchSOStatuses = async (orderIds: string[]) => {
+    if (orderIds.length === 0) return;
+    try {
+      const { data, error } = await supabase
+        .from('so_delivery_invoice_status')
+        .select('*')
+        .in('so_id', orderIds);
+      if (error) throw error;
+      const map = new Map<string, SODeliveryInvoiceStatus>();
+      (data || []).forEach((row: SODeliveryInvoiceStatus) => map.set(row.so_id, row));
+      setSoStatuses(map);
+    } catch (err) {
+      console.error('Error fetching SO statuses:', err);
+    }
+  };
 
   const fetchSalesOrders = async () => {
     try {
@@ -153,6 +179,7 @@ export default function SalesOrders() {
 
       if (error) throw error;
       setSalesOrders(data || []);
+      fetchSOStatuses((data || []).map((o: SalesOrder) => o.id));
     } catch (error: any) {
       console.error('Error fetching sales orders:', error.message);
       showToast({ type: 'error', title: 'Error', message: t('errors.failedToLoadSalesOrders') });
@@ -209,8 +236,8 @@ export default function SalesOrders() {
       rejected: { color: 'bg-red-100 text-red-800', label: t('common.rejected') },
       stock_reserved: { color: 'bg-blue-100 text-blue-800', label: t('stock.reserved') },
       shortage: { color: 'bg-orange-100 text-orange-800', label: 'Shortage' },
-      pending_delivery: { color: 'bg-purple-100 text-purple-800', label: 'Pending Delivery' },
-      partially_delivered: { color: 'bg-indigo-100 text-indigo-800', label: 'Partially Delivered' },
+      pending_delivery: { color: 'bg-blue-100 text-blue-800', label: 'Pending Delivery' },
+      partially_delivered: { color: 'bg-blue-100 text-blue-800', label: 'Partially Delivered' },
       delivered: { color: 'bg-teal-100 text-teal-800', label: 'Delivered' },
       closed: { color: 'bg-gray-100 text-gray-800', label: 'Closed' },
       cancelled: { color: 'bg-red-100 text-red-800', label: t('common.cancelled') },
@@ -222,6 +249,33 @@ export default function SalesOrders() {
         {config.label}
       </span>
     );
+  };
+
+  const getDeliveryStatusBadge = (soId: string) => {
+    const s = soStatuses.get(soId);
+    if (!s) return <span className="text-gray-400 text-xs">—</span>;
+    if (s.special_status === 'invoice_done_delivery_pending') {
+      return <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-100 text-amber-800">Invoice Done, Delivery Pending</span>;
+    }
+    const cfg: Record<string, { color: string; label: string }> = {
+      pending: { color: 'bg-gray-100 text-gray-700', label: 'Pending' },
+      partial: { color: 'bg-blue-100 text-blue-700', label: 'Partial' },
+      completed: { color: 'bg-teal-100 text-teal-700', label: 'Completed' },
+    };
+    const c = cfg[s.delivery_status] || { color: 'bg-gray-100 text-gray-700', label: s.delivery_status };
+    return <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${c.color}`}>{c.label}</span>;
+  };
+
+  const getInvoiceStatusBadge = (soId: string) => {
+    const s = soStatuses.get(soId);
+    if (!s) return <span className="text-gray-400 text-xs">—</span>;
+    const cfg: Record<string, { color: string; label: string }> = {
+      pending: { color: 'bg-gray-100 text-gray-700', label: 'Pending' },
+      partial: { color: 'bg-yellow-100 text-yellow-700', label: 'Partial' },
+      completed: { color: 'bg-green-100 text-green-700', label: 'Completed' },
+    };
+    const c = cfg[s.invoice_status] || { color: 'bg-gray-100 text-gray-700', label: s.invoice_status };
+    return <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${c.color}`}>{c.label}</span>;
   };
 
   const handleSubmitForApproval = async (orderId: string) => {
@@ -603,19 +657,21 @@ export default function SalesOrders() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Docs</th>
                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status / Approval</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Delivery</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Invoice</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan={11} className="px-6 py-4 text-center text-gray-500">
                     Loading...
                   </td>
                 </tr>
               ) : filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan={11} className="px-6 py-4 text-center text-gray-500">
                     No sales orders found
                   </td>
                 </tr>
@@ -692,6 +748,12 @@ export default function SalesOrders() {
                           <XCircle className="w-5 h-5 text-red-600 ml-2" title="Rejected" />
                         )}
                       </div>
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-center">
+                      {getDeliveryStatusBadge(order.id)}
+                    </td>
+                    <td className="px-4 py-4 whitespace-nowrap text-center">
+                      {getInvoiceStatusBadge(order.id)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <div className="flex items-center gap-2">

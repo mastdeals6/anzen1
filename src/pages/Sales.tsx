@@ -10,7 +10,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigation } from '../contexts/NavigationContext';
 import { useFinance } from '../contexts/FinanceContext';
 import { supabase } from '../lib/supabase';
-import { Plus, Edit, Trash2, FileText, Eye, FileX } from 'lucide-react';
+import { Plus, CreditCard as Edit, Trash2, FileText, Eye, FileX } from 'lucide-react';
 import { showToast } from '../components/ToastNotification';
 import { showConfirm } from '../components/ConfirmDialog';
 import { formatDate } from '../utils/dateFormat';
@@ -1509,11 +1509,17 @@ export function Sales() {
                 </div>
               </div>
 
-              {customerSalesOrders.length > 0 && !editingInvoice && (
-                <div className={`p-3 rounded-lg border-2 ${soAutoLinked ? 'bg-green-50 border-green-300' : 'bg-blue-50 border-blue-200'}`}>
-                  <label className={`block text-sm font-bold mb-2 ${soAutoLinked ? 'text-green-900' : 'text-blue-900'}`}>
-                    Link to Sales Order {soAutoLinked ? '(auto-linked from DC)' : '(for advance payment tracking)'}
-                  </label>
+              {formData.customer_id && !editingInvoice && (
+                <div className={`p-3 rounded-lg border-2 ${soAutoLinked ? 'bg-green-50 border-green-300' : (!selectedSOId && selectedDCIds.length === 0) ? 'bg-red-50 border-red-300' : 'bg-blue-50 border-blue-200'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className={`text-sm font-bold ${soAutoLinked ? 'text-green-900' : 'text-blue-900'}`}>
+                      Sales Order <span className="text-red-500">*</span>
+                      {soAutoLinked && <span className="font-normal text-green-700 ml-1">(auto-linked from Delivery Challan)</span>}
+                      {!soAutoLinked && selectedDCIds.length > 0 && <span className="font-normal text-blue-700 ml-1">(from Delivery Challan)</span>}
+                      {!soAutoLinked && selectedDCIds.length === 0 && <span className="font-normal text-blue-700 ml-1">(from Sales Order)</span>}
+                    </label>
+                  </div>
+
                   {soAutoLinked ? (
                     <div className="flex items-center justify-between">
                       <div>
@@ -1544,28 +1550,50 @@ export function Sales() {
                         Change
                       </button>
                     </div>
+                  ) : customerSalesOrders.length === 0 ? (
+                    <div className="p-2 bg-red-100 border border-red-300 rounded">
+                      <p className="text-sm font-medium text-red-800">
+                        Invoice must be linked to a Sales Order. No active Sales Orders found for this customer.
+                      </p>
+                      <p className="text-xs text-red-700 mt-1">
+                        Please create a Sales Order first, then come back to create the invoice.
+                      </p>
+                    </div>
                   ) : (
-                    <select
-                      value={selectedSOId}
-                      onChange={(e) => setSelectedSOId(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border-2 border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-medium"
-                    >
-                      <option value="">-- Select Sales Order (if this invoice is from an SO) --</option>
-                      {customerSalesOrders.map(so => {
-                        const productNames = so.items && so.items.length > 0
-                          ? so.items.map(i => i.product_name).join(', ')
-                          : `Rp ${so.total_amount.toLocaleString('id-ID')}`;
-                        const advanceLabel = so.advance_payment_amount > 0
-                          ? ` | Advance: Rp ${so.advance_payment_amount.toLocaleString('id-ID')}`
-                          : '';
-                        return (
-                          <option key={so.id} value={so.id}>
-                            {so.so_number} — {productNames}{advanceLabel}
-                          </option>
-                        );
-                      })}
-                    </select>
+                    <>
+                      <select
+                        value={selectedSOId}
+                        onChange={(e) => setSelectedSOId(e.target.value)}
+                        className={`w-full px-3 py-2 text-sm border-2 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white font-medium ${!selectedSOId ? 'border-red-300' : 'border-blue-300'}`}
+                      >
+                        <option value="">-- Select Sales Order (required) --</option>
+                        {customerSalesOrders.map(so => {
+                          const productNames = so.items && so.items.length > 0
+                            ? so.items.map(i => i.product_name).join(', ')
+                            : `Rp ${so.total_amount.toLocaleString('id-ID')}`;
+                          const advanceLabel = so.advance_payment_amount > 0
+                            ? ` | Advance: Rp ${so.advance_payment_amount.toLocaleString('id-ID')}`
+                            : '';
+                          return (
+                            <option key={so.id} value={so.id}>
+                              {so.so_number} — {productNames}{advanceLabel}
+                            </option>
+                          );
+                        })}
+                      </select>
+                      {!selectedSOId && selectedDCIds.length === 0 && (
+                        <p className="text-xs text-red-600 mt-1 font-medium">
+                          Invoice must be linked to a Sales Order. Please select one above.
+                        </p>
+                      )}
+                      {!selectedSOId && selectedDCIds.length > 0 && (
+                        <p className="text-xs text-amber-600 mt-1">
+                          Sales Order will be auto-linked from the selected Delivery Challan(s).
+                        </p>
+                      )}
+                    </>
                   )}
+
                   {selectedSOId && !soAutoLinked && (() => {
                     const so = customerSalesOrders.find(s => s.id === selectedSOId);
                     if (so && so.advance_payment_amount > 0) {
@@ -1589,7 +1617,7 @@ export function Sales() {
                     }
                     return null;
                   })()}
-                  {customerSalesOrders.some(so => so.advance_payment_amount > 0) && !selectedSOId && !soAutoLinked && (
+                  {customerSalesOrders.some(so => so.advance_payment_amount > 0) && !selectedSOId && !soAutoLinked && customerSalesOrders.length > 0 && (
                     <div className="mt-2 p-2 bg-amber-50 border border-amber-300 rounded">
                       <p className="text-xs font-medium text-amber-800">
                         This customer has Sales Orders with advance payments. Select the correct SO above to apply advance payment to this invoice.

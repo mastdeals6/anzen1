@@ -1163,26 +1163,30 @@ export function DeliveryChallan() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Linked Sales Order
+                  Sales Order {!editingChallan && <span className="text-red-500">*</span>}
                 </label>
                 <SearchableSelect
                   value={formData.sales_order_id}
                   onChange={handleSalesOrderChange}
-                  options={[
-                    { value: '', label: 'No Sales Order / Manual Entry' },
-                    ...salesOrders.map((so: any) => ({
-                      value: so.id,
-                      label: `${so.so_number} (${so.status})`
-                    }))
-                  ]}
-                  placeholder="Select Sales Order"
+                  options={salesOrders.map((so: any) => ({
+                    value: so.id,
+                    label: `${so.so_number} (${so.status})`
+                  }))}
+                  placeholder={formData.customer_id ? 'Select Sales Order' : 'Select a customer first'}
                   disabled={!formData.customer_id}
                 />
-                {formData.customer_id && salesOrders.length === 0 && (
-                  <p className="text-xs text-orange-600 mt-1">⚠ No active sales orders for this customer</p>
-                )}
                 {!formData.customer_id && (
-                  <p className="text-xs text-gray-500 mt-1">Select a customer first</p>
+                  <p className="text-xs text-gray-500 mt-1">Select a customer first to see available Sales Orders</p>
+                )}
+                {formData.customer_id && salesOrders.length === 0 && (
+                  <p className="text-xs text-red-600 mt-1 font-medium">
+                    No active Sales Orders for this customer. Please create a Sales Order first before creating a Delivery Challan.
+                  </p>
+                )}
+                {formData.customer_id && salesOrders.length > 0 && !formData.sales_order_id && !editingChallan && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    Please create or select a Sales Order before creating Delivery Challan
+                  </p>
                 )}
               </div>
             </div>
